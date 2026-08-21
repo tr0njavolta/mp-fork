@@ -355,31 +355,29 @@ same is true of `nix run .#build`.
 
 ## Working on the docs site
 
-The documentation site under `docs/` is a [Hugo](https://gohugo.io/) project.
-`nix flake check` builds it as one of its checks, so a broken site fails CI.
+Docs prose lives here under `docs/content/`, with the example manifests it
+embeds under `docs/manifests/`. The site that renders it — the
+[Hugo](https://gohugo.io/) project, its theme, and its build — lives in
+[modelplane-docs](https://github.com/tr0njavolta/modelplane-docs), which pulls
+this repo in as a submodule and mounts `docs/content/`, `docs/manifests/`, and
+`apis/` into the site. Nothing here builds the site; edit content here and the
+site there.
 
-Run the commands below from the repository root, not from `docs/`. They're flake
-apps (`nix run .#...`), so they resolve against the flake at the root regardless
-of which file you're editing.
-
-Preview it locally with live reload:
-
-```bash
-nix run .#docs-serve            # http://localhost:1313
-```
-
-`nix build .#docs` produces the production site in `result/`. The production
-build compiles the theme's SCSS and runs it through PostCSS to strip unused
-CSS, sort media queries, and minify. Those Node dependencies are pinned in
-`docs/package-lock.json` and built reproducibly; the local preview skips them.
-
-The site's JavaScript bundle is built by webpack and committed to git under the
-theme's assets. Rebuild it after changing anything under
-`docs/utils/webpack/src/` and commit the result:
+To preview a content change, clone the site repo and point its submodule at
+your branch:
 
 ```bash
-nix run .#docs-generate
+git clone --recurse-submodules https://github.com/tr0njavolta/modelplane-docs.git
+cd modelplane-docs
+git -C modelplane fetch /path/to/modelplane my-branch
+git -C modelplane checkout FETCH_HEAD
+nix run '.?submodules=1#serve'  # http://localhost:1313
 ```
+
+The site repo's submodule pin is what deploys: a daily workflow there opens a
+pull request moving it to the tip of this repo's `main`, and merging that
+publishes the content. Run it early with `gh workflow run content.yml --repo
+tr0njavolta/modelplane-docs`.
 
 ### Manifest shortcodes
 
@@ -433,13 +431,16 @@ validator is `docs/utils/validate/validate_manifests.py`.
 
 ### Linting and link checking
 
-Docs prose is linted with [Vale](https://vale.sh) and internal links are checked
-with [htmltest](https://github.com/wjdp/htmltest). Both run as flake checks, so
-run them with the rest of CI:
+Docs prose is linted with [Vale](https://vale.sh), which runs as a flake check,
+so run it with the rest of CI:
 
 ```bash
 nix flake check
 ```
+
+Internal links are checked with [htmltest](https://github.com/wjdp/htmltest)
+against the built site, which means it runs in the site repo, not here. A
+content change that breaks a link fails there, when the submodule pin moves.
 
 Custom Modelplane rules live in `docs/utils/vale/styles/Modelplane/`.
 
@@ -454,13 +455,10 @@ CI runs them on every pull request via the same check (see
 
 ### Deployment
 
-The site deploys to [Vercel](https://vercel.com/). Vercel builds it with the
-same `nix build .#docs` derivation that `nix flake check` verifies, so what
-ships matches what CI checks. `vercel.json` points the build at
-[`docs/vercel-build.sh`](docs/vercel-build.sh), which installs Nix into
-Vercel's build image, runs the build, and writes the static site to `public/`.
-Vercel's GitHub app drives deploys as usual: preview URLs on pull requests
-(including from forks) and production on merge to `main`.
+The site deploys to [Vercel](https://vercel.com/) from the modelplane-docs
+repo, on merge to its `main`, with preview URLs on its pull requests. Content
+merged here reaches production when the submodule pin there moves to include
+it.
 
 ## Releasing
 
