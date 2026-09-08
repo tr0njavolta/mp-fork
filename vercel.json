@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "true",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- docs apis",
+  "buildCommand": "git clone --quiet --depth 1 https://github.com/modelplaneai/docs-site .docs-site && CONTENT_DIR=\"$PWD\" bash .docs-site/build.sh",
+  "outputDirectory": ".docs-site/public"
+}

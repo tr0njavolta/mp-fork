@@ -353,33 +353,41 @@ are Linux images assembled entirely from data — a prebuilt Python interpreter
 and dependency wheels plus our own source — so there's no cross-compilation. The
 same is true of `nix run .#build`.
 
-## Working on the docs site
+## Working on the docs
 
-The documentation site under `docs/` is a [Hugo](https://gohugo.io/) project.
-`nix flake check` builds it as one of its checks, so a broken site fails CI.
+What lives here is the content: prose under `docs/content/`, the example
+manifests it embeds under `docs/manifests/`, the API reference's grouping in
+`docs/data/`, and the API definitions the reference is generated from under
+`apis/`.
 
-Run the commands below from the repository root, not from `docs/`. They're flake
-apps (`nix run .#...`), so they resolve against the flake at the root regardless
-of which file you're editing.
+The site that renders it — the [Hugo](https://gohugo.io/) project, the geekboot
+theme, and the CSS and JavaScript pipelines — lives in
+[docs-site](https://github.com/modelplaneai/docs-site). Its build clones one
+branch of this repo per docs version and mounts those four paths into the site.
+Nothing here builds the site: edit content here, edit the site there.
 
-Preview it locally with live reload:
-
-```bash
-nix run .#docs-serve            # http://localhost:1313
-```
-
-`nix build .#docs` produces the production site in `result/`. The production
-build compiles the theme's SCSS and runs it through PostCSS to strip unused
-CSS, sort media queries, and minify. Those Node dependencies are pinned in
-`docs/package-lock.json` and built reproducibly; the local preview skips them.
-
-The site's JavaScript bundle is built by webpack and committed to git under the
-theme's assets. Rebuild it after changing anything under
-`docs/utils/webpack/src/` and commit the result:
+Preview a content change locally by pointing the site at your checkout:
 
 ```bash
-nix run .#docs-generate
+git clone https://github.com/modelplaneai/docs-site.git
+cd docs-site
+ln -s /path/to/modelplane modelplane
+hugo server                     # http://localhost:1313
 ```
+
+Hugo reloads on edits in this repo, so that's the setup for writing. It needs
+Hugo extended at the version pinned near the top of the site repo's `build.sh`.
+
+That renders the prose but doesn't lint it — Vale lives here, not in the site
+repo, so run the checks from this repo before pushing:
+
+```bash
+nix flake check
+```
+
+That's Vale on the prose and the Pydantic validation of the example manifests,
+the same checks CI runs. See [Linting](#linting) below for what Vale flags and
+where to add exceptions.
 
 ### Manifest shortcodes
 
@@ -432,15 +440,17 @@ the current API would reject. Resources from other API groups (provider configs,
 core Kubernetes, Crossplane packages) have no model and are skipped. The
 validator is `docs/utils/validate/validate_manifests.py`.
 
-### Linting and link checking
+### Linting
 
-Docs prose is linted with [Vale](https://vale.sh) and internal links are checked
-with [htmltest](https://github.com/wjdp/htmltest). Both run as flake checks, so
-run them with the rest of CI:
+Docs prose is linted with [Vale](https://vale.sh), which runs as a flake check,
+so run it with the rest of CI:
 
 ```bash
 nix flake check
 ```
+
+Internal links are checked with [htmltest](https://github.com/wjdp/htmltest)
+against the built site, so that check runs in the site repo, not here.
 
 Custom Modelplane rules live in `docs/utils/vale/styles/Modelplane/`.
 
@@ -455,13 +465,18 @@ CI runs them on every pull request via the same check (see
 
 ### Deployment
 
-The site deploys to [Vercel](https://vercel.com/). Vercel builds it with the
-same `nix build .#docs` derivation that `nix flake check` verifies, so what
-ships matches what CI checks. `vercel.json` points the build at
-[`docs/vercel-build.sh`](docs/vercel-build.sh), which installs Nix into
-Vercel's build image, runs the build, and writes the static site to `public/`.
-Vercel's GitHub app drives deploys as usual: preview URLs on pull requests
-(including from forks) and production on merge to `main`.
+Production deploys from the
+[docs-site](https://github.com/modelplaneai/docs-site) repo, whose build reads
+the current tip of every branch it tracks. Nothing there pins a content
+revision, so a content change merged here ships at that repo's next build.
+
+Pull requests here still get their own [Vercel](https://vercel.com/) preview of
+the rendered site. [`vercel.json`](vercel.json) clones the site repo and runs
+its `build.sh` with `CONTENT_DIR` pointing at this checkout, which builds a
+single version: the branch under review, at the deployment root, carrying the
+"unreleased version" banner. The version switcher in a preview links to
+versions that preview doesn't contain, so those links 404; the rest is the real
+site, theme and all.
 
 ## Releasing
 
